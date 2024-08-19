@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time Object Detection</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        #videoContainer {
+            position: relative;
+            margin-bottom: 20px;
+        }
+        #webcam, #canvas {
+            width: 100%;
+            height: auto;
+            max-height: 480px;
+        }
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #detectedObjects {
+            background-color: #f9f9f9;
+            padding: 10px;
+            border-radius: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        #detectedObjects h2 {
+            margin-top: 0;
+        }
+        #objectList {
+            list-style-type: none;
+            padding: 0;
+        }
+        #objectList li {
+            margin-bottom: 5px;
+        }
+        #status {
+            text-align: center;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        .error {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Real-time Object Detection</h1>
+        <div id="status">Loading model...</div>
+        <div id="videoContainer">
+            <video id="webcam" autoplay muted></video>
+            <canvas id="canvas"></canvas>
+        </div>
+        <div id="detectedObjects">
+            <h2>Detected Objects</h2>
+            <ul id="objectList"></ul>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const objectList = document.getElementById('objectList');
+        const statusElement = document.getElementById('status');
+
+        let model;
+        let detectedObjects = new Map();
+
+        // Load the COCO-SSD model
+        async function loadModel() {
+            try {
+                model = await cocoSsd.load();
+                statusElement.textContent = 'Model loaded. Starting video...';
+                startVideo();
+            } catch (err) {
+                console.error('Failed to load model:', err);
+                statusElement.textContent = 'Error: Failed to load model.';
+                statusElement.classList.add('error');
+            }
+        }
+
+        // Start the video stream
+        function startVideo() {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    video.srcObject = stream;
+                    video.addEventListener('loadeddata', () => {
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        statusElement.textContent = 'Video started. Detecting objects...';
+                        detectObjects();
+                    });
+                })
+                .catch(err => {
+                    console.error('Error accessing the webcam:', err);
+                    statusElement.textContent = 'Error: Unable to access the webcam.';
+                    statusElement.classList.add('error');
+                });
+        }
+
+        // Detect objects in the video stream
+        function detectObjects() {
+            model.detect(video).then(predictions => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                predictions.forEach(prediction => {
+                    const [x, y, width, height] = prediction.bbox;
+                    const className = prediction.class;
+                    const score = prediction.score.toFixed(2);
+
+                    // Draw bounding box
+                    ctx.strokeStyle = '#00FFFF';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x, y, width, height);
+
+                    // Draw label
+                    ctx.fillStyle = '#00FFFF';
+                    ctx.font = '16px Arial';
+                    ctx.fillText(`${className} (${score})`, x, y > 20 ? y - 5 : y + 20);
+
+                    // Update detected objects list
+                    if (!detectedObjects.has(className)) {
+                        const timestamp = new Date().toLocaleTimeString();
+                        detectedObjects.set(className, timestamp);
+                        updateObjectList();
+                    }
+                });
+
+                // Schedule next detection
+                setTimeout(detectObjects, 500); // 2 FPS
+            });
+        }
+
+        // Update the list of detected objects
+        function updateObjectList() {
+            objectList.innerHTML = '';
+            detectedObjects.forEach((timestamp, className) => {
+                const li = document.createElement('li');
+                li.textContent = `${className} (first detected at ${timestamp})`;
+                objectList.appendChild(li);
+            });
+        }
+
+        // Start the application
+        loadModel();
+    </script>
+</body>
+</html>
